@@ -11,7 +11,11 @@
 
 #import "RCTNetworking.h"
 
+#import <AFNetworking/AFSecurityPolicy.h>
+
 @interface RCTHTTPRequestHandler () <NSURLSessionDataDelegate>
+
+@property (nonatomic, strong) AFSecurityPolicy *securityPolicy;
 
 @end
 
@@ -26,6 +30,14 @@
 @synthesize methodQueue = _methodQueue;
 
 RCT_EXPORT_MODULE()
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        self.securityPolicy = [AFSecurityPolicy policyWithPinningMode:AFSSLPinningModeCertificate];
+    }
+    return self;
+}
 
 - (void)invalidate
 {
@@ -175,6 +187,30 @@ didReceiveResponse:(NSURLResponse *)response
     [_delegates removeObjectForKey:task];
   }
   [delegate URLRequest:task didCompleteWithError:error];
+}
+
+- (void)URLSession:(NSURLSession *)session didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential * _Nullable))completionHandler {
+    NSURLSessionAuthChallengeDisposition disposition = NSURLSessionAuthChallengePerformDefaultHandling;
+    __block NSURLCredential *credential = nil;
+    
+    if ([challenge.protectionSpace.authenticationMethod isEqualToString:NSURLAuthenticationMethodServerTrust]) {
+        if ([self.securityPolicy evaluateServerTrust:challenge.protectionSpace.serverTrust forDomain:challenge.protectionSpace.host]) {
+            credential = [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust];
+            if (credential) {
+                disposition = NSURLSessionAuthChallengeUseCredential;
+            } else {
+                disposition = NSURLSessionAuthChallengePerformDefaultHandling;
+            }
+        } else {
+            disposition = NSURLSessionAuthChallengeCancelAuthenticationChallenge;
+        }
+    } else {
+        disposition = NSURLSessionAuthChallengePerformDefaultHandling;
+    }
+    
+    if (completionHandler) {
+        completionHandler(disposition, credential);
+    }
 }
 
 @end
